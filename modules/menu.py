@@ -1,5 +1,6 @@
 import sys
 import getpass
+import logging
 import pyperclip
 
 from termcolor import colored
@@ -8,13 +9,9 @@ from halo import Halo
 from modules.encryption import DataManip
 from modules.exceptions import *
 
+logger = logging.getLogger(__name__)
+
 class Manager:
-    """
-    Arguments: 
-        obj {DataManip}
-        filename {str}
-        master_pass {str}
-    """
     def __init__(self, obj: DataManip, filename: str, master_file: str, master_pass: str):
         self.obj_ = obj
         self.filename_ = filename
@@ -23,42 +20,45 @@ class Manager:
 
     def begin(self):
         try:
-            # NOTE: fully tested already
             choice = self.menu_prompt()
         except UserExits:
             raise UserExits
 
-        if choice == '4': # User Exits
+        if choice == '4':
             raise UserExits
 
-        if choice == '1': # add or update a password
-            # NOTE: fully tested already
+        if choice == '1':
             try:
                 self.update_db()
                 return self.begin()
             except UserExits:
                 raise UserExits
-        
-        elif choice == '2': # look up a stored password
-            # NOTE: fully tested already
+
+        elif choice == '2':
             try:
-                string = self.load_password()
-                website = string.split(':')[0]
-                password = string.split(':')[1]
+                result = self.load_password()
+                # FIX: use split(':', 1) to handle website names that contain colons
+                parts = result.split(':', 1)
+                if len(parts) != 2:
+                    logger.error("Unexpected format when loading password — could not split result.")
+                    print(colored("Error: Could not read password data correctly.", "red"))
+                    return self.begin()
+                website = parts[0]
+                password = parts[1]
+                logger.info("Password retrieved for website: %s", website)
                 print(colored(f"Password for {website}: {password}", "yellow"))
-                
+
                 copy_to_clipboard = input("Copy password to clipboard? (Y/N): ").strip()
-                if copy_to_clipboard == "exit":
+                if copy_to_clipboard.lower() == "exit":
                     raise UserExits
-                elif copy_to_clipboard == 'y':
+                elif copy_to_clipboard.lower() == 'y':
                     try:
                         pyperclip.copy(password)
                         print(colored(f"{self.obj_.checkmark_} Password copied to clipboard", "green"))
                     except pyperclip.PyperclipException:
-                        print(colored(f"{self.obj_.x_mark_} If you see this message on Linux use `sudo apt-get install xsel` for copying to work. {self.obj_.x_mark_}", "red"))
+                        print(colored(f"{self.obj_.x_mark_} If you see this on Linux use `sudo apt-get install xsel` for copying to work. {self.obj_.x_mark_}", "red"))
                 else:
                     pass
-                
                 return self.begin()
             except UserExits:
                 raise UserExits
@@ -66,15 +66,13 @@ class Manager:
                 print(colored(f"{self.obj_.x_mark_} DB not found. Try adding a password {self.obj_.x_mark_}", "red"))
                 return self.begin()
 
-        elif choice == '3': # Delete a single password
-            # NOTE: fully tested already
+        elif choice == '3':
             try:
                 return self.delete_password()
             except UserExits:
                 raise UserExits
 
-        elif choice == '5': # Delete DB of Passwords
-            # NOTE: fully tested already
+        elif choice == '5':
             try:
                 self.delete_db(self.master_pass_)
             except MasterPasswordIncorrect:
@@ -82,9 +80,8 @@ class Manager:
                 return self.delete_db(self.master_pass_)
             except UserExits:
                 raise UserExits
-        
-        elif choice == '6': # delete ALL data
-            # NOTE: fully tested already
+
+        elif choice == '6':
             try:
                 self.delete_all_data(self.master_pass_)
             except MasterPasswordIncorrect:
@@ -92,20 +89,15 @@ class Manager:
                 return self.delete_all_data(self.master_pass_)
             except UserExits:
                 raise UserExits
-                
-                
 
+        else:
+            # FIX: invalid menu choices now warn the user instead of silently doing nothing
+            logger.warning("Invalid menu choice entered: '%s'", choice)
+            print(colored(f"{self.obj_.x_mark_} Invalid choice '{choice}'. Please enter a number between 1 and 6. {self.obj_.x_mark_}", "red"))
+            return self.begin()
 
     def menu_prompt(self):
-        """Asks user for a choice from Menu
-        
-        Raises:
-            UserExits: User exits on choice prompt
-        
-        Returns:
-            str -- Users choice
-        """
-
+        """Asks user for a choice from Menu"""
         print(colored("\n\t*Enter 'exit' at any point to exit.*\n", "magenta"))
         print(colored("1) Add/Update a password", "blue"))
         print(colored("2) Look up a stored password", "blue"))
@@ -117,25 +109,14 @@ class Manager:
         choice = input("Enter a choice: ")
 
         if choice == "":
-            return self.menu_prompt() # recursive call
-        elif choice == "exit":
+            return self.menu_prompt()
+        elif choice.strip() == "exit":
             raise UserExits
         else:
             return choice.strip()
 
     def __return_generated_password(self, website):
-        """Returns a generated password
-        
-        Arguments:
-            website {str} -- website for password
-        
-        Raises:
-            UserExits: User exits on loop prompt
-        
-        Returns:
-            str -- A randomly generated password
-        """
-
+        """Returns a generated password"""
         try:
             generated_pass = self.obj_.generate_password()
             print(colored(generated_pass, "yellow"))
@@ -143,107 +124,90 @@ class Manager:
             loop = input("Generate a new password? (Y/N): ")
             if loop.lower().strip() == "exit":
                 raise UserExits
-            elif (loop.lower().strip() == 'y') or (loop.strip() == "") :
-                return self.__return_generated_password(website) # recursive call
+            elif (loop.lower().strip() == 'y') or (loop.strip() == ""):
+                return self.__return_generated_password(website)
             elif loop.lower().strip() == 'n':
                 return generated_pass
         except (PasswordNotLongEnough, EmptyField):
-            print(colored("Password length invalid.", "red"))
+            print(colored("Password length invalid. Must be a number and at least 8 characters.", "red"))
             return self.__return_generated_password(website)
         except UserExits:
             print(colored("Exiting...", "red"))
             sys.exit()
 
-
-    def update_db(self): # option 1 on main.py
-        """Add or update a password in the DB
-        
-        Raises:
-            UserExits: User enters exit at website prompt or generate prompt
-        """
+    def update_db(self):
+        """Add or update a password in the DB"""
         try:
             self.list_passwords()
         except PasswordFileIsEmpty:
             pass
         except PasswordFileDoesNotExist:
-            print(colored(f"--There are no passwords stored.--", "yellow"))
-
+            print(colored("--There are no passwords stored.--", "yellow"))
 
         website = input("Enter the website for which you want to store a password (ex. google.com): ")
-        if website.lower() == "":
-            #raise EmptyField
-            self.update_db()
+        if website.strip() == "":
+            # FIX: inform user instead of silently looping
+            print(colored("Website name cannot be empty. Please try again.", "red"))
+            return self.update_db()
         elif website.lower().strip() == "exit":
             raise UserExits
         else:
             gen_question = input("Do you want to generate a password for {} ? (Y/N): ".format(website))
             if gen_question.strip() == "":
-                #raise EmptyField
-                self.update_db()
+                print(colored("Please enter Y or N.", "red"))
+                return self.update_db()
             elif gen_question.lower().strip() == "exit":
                 raise UserExits
-            elif gen_question.lower().strip() == 'n': # user wants to manually enter a password
+            elif gen_question.lower().strip() == 'n':
                 password = input("Enter a password for {}: ".format(website))
-                if password.lower().strip() == "exit":
+                if password.strip() == "":
+                    # FIX: catch empty password input
+                    logger.warning("User attempted to save an empty password for: %s", website)
+                    print(colored("Password cannot be empty. Please try again.", "red"))
+                    return self.update_db()
+                elif password.lower().strip() == "exit":
                     raise UserExits
                 else:
                     self.obj_.encrypt_data(self.filename_, password, self.master_pass_, website)
-                    
             elif gen_question.lower().strip() == 'y':
                 password = self.__return_generated_password(website)
                 self.obj_.encrypt_data("db/passwords.json", password, self.master_pass_, website)
-    
+            else:
+                # FIX: handle invalid Y/N response on generate question
+                print(colored("Please enter Y or N.", "red"))
+                return self.update_db()
+
     def load_password(self):
-        """Loads a string of websites stored and asks user to enter a 
-        website, then decrypts password for entered website
-        
-        Raises:
-            PasswordFileDoesNotExist: DB is not initialized
-            UserExits: User enters exit on website prompt
-        
-        Returns:
-            str -- string formatted in website:password
-        """
+        """Loads and decrypts a password for a given website"""
         try:
             self.list_passwords()
         except PasswordFileIsEmpty:
             return self.begin()
-            
-
-
 
         website = input("Enter website for the password you want to retrieve: ")
 
         if website.lower().strip() == "exit":
             raise UserExits
         elif website.strip() == "":
+            print(colored("Website name cannot be empty. Please try again.", "red"))
             return self.load_password()
         else:
             try:
                 plaintext = self.obj_.decrypt_data(self.master_pass_, website, self.filename_)
             except PasswordNotFound:
+                logger.warning("Password lookup failed — no entry found for: %s", website)
                 print(colored(f"{self.obj_.x_mark_} Password for {website} not found {self.obj_.x_mark_}", "red"))
                 return self.load_password()
             except PasswordFileDoesNotExist:
                 print(colored(f"{self.obj_.x_mark_} DB not found. Try adding a password {self.obj_.x_mark_}", "red"))
                 return self.begin()
-            
-            # see https://pypi.org/project/clipboard/ for copying to clipboard
-            final_str = f"{website}:{plaintext}"
 
+            final_str = f"{website}:{plaintext}"
             return final_str
 
     def delete_db(self, stored_master):
-        """Menu Prompt to Delete DB/Passwords
-        
-        Arguments:
-            stored_master {str} -- Used to authenticate, compared with inputted master password
-        
-        Raises:
-            PasswordFileDoesNotExist: Password file not initialized
-        """
-
-        confirmation = input("Are you sure you want to delete the password file? (Y/N)")
+        """Menu Prompt to Delete DB/Passwords"""
+        confirmation = input("Are you sure you want to delete the password file? (Y/N): ")
         if confirmation.lower().strip() == 'y':
             entered_master = getpass.getpass("Enter your master password to delete all stored passwords: ")
             if entered_master.lower().strip() == "exit":
@@ -259,20 +223,23 @@ class Manager:
                     print(colored(f"{self.obj_.x_mark_} DB not found. Try adding a password {self.obj_.x_mark_}", "red"))
                     return self.begin()
         elif confirmation.lower().strip() == 'n':
-                print(colored("Cancelling...", "red"))
-                return self.begin()
+            logger.info("User cancelled password database deletion.")
+            print(colored("Cancelling...", "red"))
+            return self.begin()
         elif confirmation.lower().strip() == "exit":
             raise UserExits
         elif confirmation.strip() == "":
             return self.delete_db(stored_master)
+        else:
+            # FIX: handle invalid Y/N input on deletion confirmation
+            print(colored("Please enter Y or N.", "red"))
+            return self.delete_db(stored_master)
 
     def list_passwords(self):
-        """Lists all websites stored in DB
-        """
-
+        """Lists all websites stored in DB"""
         print(colored("Current Passwords Stored:", "yellow"))
         spinner = Halo(text=colored("Loading Passwords", "yellow"), color="yellow", spinner=self.obj_.dots_)
-        
+
         try:
             lst_of_passwords = self.obj_.list_passwords(self.filename_)
             spinner.stop()
@@ -286,11 +253,7 @@ class Manager:
             raise PasswordFileDoesNotExist
 
     def delete_password(self):
-        """Deletes a single password from DB
-        
-        Raises:
-            UserExits: User exits
-        """
+        """Deletes a single password from DB"""
         try:
             self.list_passwords()
         except PasswordFileIsEmpty:
@@ -301,13 +264,16 @@ class Manager:
         if website == "exit":
             raise UserExits
         elif website == "":
+            print(colored("Website name cannot be empty. Please try again.", "red"))
             return self.delete_password()
         else:
             try:
                 self.obj_.delete_password(self.filename_, website)
+                logger.info("Password deleted for website: %s", website)
                 print(colored(f"{self.obj_.checkmark_} Data for {website} deleted successfully.", "green"))
                 return self.begin()
             except PasswordNotFound:
+                logger.warning("Delete failed — no entry found for: %s", website)
                 print(colored(f"{self.obj_.x_mark_} {website} not in DB {self.obj_.x_mark_}", "red"))
                 return self.delete_password()
             except PasswordFileDoesNotExist:
@@ -315,16 +281,8 @@ class Manager:
                 return self.begin()
 
     def delete_all_data(self, stored_master):
-        """Deletes ALL data including master password and passwords stored. Asks for user confirmation.
-        
-        Arguments:
-            stored_master {str} -- Master password that is stored
-        
-        Raises:
-            UserExits: User enters exit
-            MasterPasswordIncorrect: Master Passwords do not match
-        """
-        confirmation = input("Are you sure you want to delete all data? (Y/N)")
+        """Deletes ALL data including master password and passwords stored."""
+        confirmation = input("Are you sure you want to delete all data? (Y/N): ")
         if confirmation.lower().strip() == 'y':
             entered_master = getpass.getpass("Enter your master password to delete all stored passwords: ")
             if entered_master.lower().strip() == "exit":
@@ -337,9 +295,14 @@ class Manager:
                 except MasterPasswordIncorrect:
                     raise MasterPasswordIncorrect
         elif confirmation.lower().strip() == 'n':
-                print(colored("Cancelling...", "red"))
-                return self.begin()
+            logger.info("User cancelled full data deletion.")
+            print(colored("Cancelling...", "red"))
+            return self.begin()
         elif confirmation.lower().strip() == "exit":
             raise UserExits
         elif confirmation.strip() == "":
+            return self.delete_all_data(stored_master)
+        else:
+            # FIX: handle invalid Y/N input on full deletion confirmation
+            print(colored("Please enter Y or N.", "red"))
             return self.delete_all_data(stored_master)
