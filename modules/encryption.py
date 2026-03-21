@@ -2,12 +2,15 @@ import json
 import string
 import os
 import random
+import logging
 
 from Crypto.Cipher import AES
 from halo import Halo
 from termcolor import colored
 
 from modules.exceptions import *
+
+logger = logging.getLogger(__name__)
 
 class DataManip:
     def __init__(self):
@@ -17,90 +20,60 @@ class DataManip:
         self.specialChar_ = "!@#$%^&*()-_"
 
     def __save_password(self, filename, data, nonce, website):
-        """Saves password to DB
-        
-        Arguments:
-            filename {str} -- DB to save to
-            data {str} -- password that will be saved
-            nonce {hexadecimal} -- converted from byte type to hexadecimal as byte type is not supported in JSON
-            website {str} -- name of the website for the given password
-        """               
-
+        """Saves encrypted password to DB"""
         spinner = Halo(text=colored("Saving", "green"), spinner=self.dots_, color="green")
         spinner.start()
-        if os.path.isfile(filename):
-            try:
-                with open(filename, 'r') as jsondata:
-                    jfile = json.load(jsondata)
+
+        try:
+            if os.path.isfile(filename):
+                try:
+                    with open(filename, 'r') as jsondata:
+                        jfile = json.load(jsondata)
+                    jfile[website]["nonce"] = nonce
+                    jfile[website]["password"] = data
+                except KeyError:
+                    with open(filename, 'r') as jsondata:
+                        jfile = json.load(jsondata)
+                    jfile[website] = {}
+                    jfile[website]["nonce"] = nonce
+                    jfile[website]["password"] = data
+                except json.JSONDecodeError:
+                    # FIX: handle corrupted password database file
+                    logger.error("Password database file is corrupted and could not be read.")
+                    spinner.stop()
+                    print(colored("Error: Password database is corrupted.", "red"))
+                    return
+                with open(filename, 'w') as jsondata:
+                    json.dump(jfile, jsondata, sort_keys=True, indent=4)
+            else:
+                jfile = {website: {}}
                 jfile[website]["nonce"] = nonce
                 jfile[website]["password"] = data
                 with open(filename, 'w') as jsondata:
                     json.dump(jfile, jsondata, sort_keys=True, indent=4)
-            except KeyError:
-                with open(filename, 'r') as jsondata:
-                    jfile = json.load(jsondata)
-                jfile[website] = {}
-                jfile[website]["nonce"] = nonce
-                jfile[website]["password"] = data
-                with open(filename, 'w') as jsondata:
-                    json.dump(jfile, jsondata, sort_keys=True, indent=4)
-        else: # initialize the file in case it doesn't exist off the start
-            jfile = {website: {}}
-            jfile[website]["nonce"] = nonce
-            jfile[website]["password"] = data
-            with open(filename, 'w') as jsondata:
-                json.dump(jfile, jsondata, sort_keys=True, indent=4)
+        except OSError as e:
+            # FIX: catch disk/permission errors when saving
+            logger.error("Failed to save password for %s due to OS error: %s", website, e)
+            spinner.stop()
+            print(colored("Error: Could not save password. Check disk space and permissions.", "red"))
+            return
+
         spinner.stop()
+        logger.info("Password saved successfully for website: %s", website)
         print(colored(f"{self.checkmark_} Saved successfully. Thank you!", "green"))
 
-
-
     def encrypt_data(self, filename, data, master_pass, website):
-        """Encrypt and save the data to a file using master password as the key
-        
-        Arguments:
-            filename {str}
-            data {str} -- password to save
-            master_pass {str}
-            website {str} -- website to store password
-        """        
-
-        """Concatenated extra characters in the case that the master password
-        is less than 16 characters. However, this isn't a big safety trade off
-        as the full length master password is hashed and checked for."""
+        """Encrypt and save the data to a file using master password as the key"""
         concatenated_master = master_pass + "================"
-
         key = concatenated_master[:16].encode("utf-8")
-
         cipher = AES.new(key, AES.MODE_EAX)
-
-        """A value that must never be reused for any other encryption done with
-        this key saved alongside encrypted password. Converted to hexadecimal
-        to be saved in DB. Later converted back to bytes to decode data"""
         nonce = cipher.nonce.hex()
-
         data_to_encrypt = data.encode("utf-8")
-        # again, bytes is invalid data for JSON so we convert it
         encrypted_data = cipher.encrypt(data_to_encrypt).hex()
-
         self.__save_password(filename, encrypted_data, nonce, website)
 
     def decrypt_data(self, master_pass, website, filename):
-        """Return a decrypted password as a string.
-        
-        Arguments:
-            master_pass {str} -- key
-            website {str} -- The password being returned is from this website
-            filename {str} -- database in which the password is stored.
-        
-        Raises:
-            PasswordNotFound: Password is not located in DB
-            PasswordFileDoesNotExist: The db is not initiated
-        
-        Returns:
-            str -- decrypted password
-        """    
-
+        """Return a decrypted password as a string."""
         if os.path.isfile(filename):
             try:
                 with open(filename, 'r') as jdata:
@@ -109,28 +82,28 @@ class DataManip:
                 password = bytes.fromhex(jfile[website]["password"])
             except KeyError:
                 raise PasswordNotFound
+            except json.JSONDecodeError:
+                # FIX: handle corrupted database during decryption
+                logger.error("Password database is corrupted — could not read during decryption.")
+                raise PasswordFileDoesNotExist
+            except ValueError as e:
+                # FIX: handle corrupted hex data stored in the database
+                logger.error("Corrupted password data for website '%s': %s", website, e)
+                raise PasswordNotFound
+            except OSError as e:
+                logger.error("Could not read password file: %s", e)
+                raise PasswordFileDoesNotExist
         else:
             raise PasswordFileDoesNotExist
-        # add extra characters and take first 16 to make sure key is right.
+
         formatted_master_pass = master_pass + "================"
         master_pass_encoded = formatted_master_pass[:16].encode("utf-8")
-        cipher = AES.new(master_pass_encoded, AES.MODE_EAX, nonce = nonce)
+        cipher = AES.new(master_pass_encoded, AES.MODE_EAX, nonce=nonce)
         plaintext_password = cipher.decrypt(password).decode("utf-8")
-
         return plaintext_password
 
     def generate_password(self):
-        """Generates a complex password
-        
-        Raises:
-            UserExits: user types "exit" in length
-            EmptyField: user leaves length field empty
-            PasswordNotLongEnough: raised when user enters a length below 8
-        
-        Returns:
-            str -- complex password
-        """        
-
+        """Generates a complex password"""
         password = []
         length = input("Enter Length for Password (At least 8): ")
 
@@ -138,43 +111,48 @@ class DataManip:
             raise UserExits
         elif length.strip() == "":
             raise EmptyField
-        elif int(length) < 8:
+
+        # FIX: catch non-numeric input instead of crashing with ValueError
+        try:
+            length_int = int(length)
+        except ValueError:
+            logger.warning("Invalid password length entered — not a number: '%s'", length)
+            print(colored("Please enter a valid number for the password length.", "red"))
+            return self.generate_password()
+
+        if length_int < 8:
             raise PasswordNotLongEnough
         else:
-            # generating a password
             spinner = Halo(text=colored("Generating Password", "green"), spinner=self.dots_, color="green")
             spinner.start()
-            for i in range(0, int(length)):
-                #choose character from one of the lists randomly
-                password.append(random.choice(random.choice([string.ascii_lowercase, string.ascii_uppercase, string.digits, self.specialChar_])))
-
+            for i in range(0, length_int):
+                password.append(random.choice(random.choice([
+                    string.ascii_lowercase,
+                    string.ascii_uppercase,
+                    string.digits,
+                    self.specialChar_
+                ])))
             finalPass = "".join(password)
             spinner.stop()
-
             return finalPass
-    
-    def list_passwords(self, filename):
-        """Loads a list of websites in DB
-        
-        Arguments:
-            filename {str} -- DB file
-        
-        Raises:
-            PasswordFileIsEmpty: No Passwords stored in DB
-            PasswordFileDoesNotExist: Password File Not found
-        
-        Returns:
-            str -- List of Passwords
-        """
 
+    def list_passwords(self, filename):
+        """Loads a list of websites in DB"""
         if os.path.isfile(filename):
-            with open(filename, 'r') as jsondata:
-                pass_list = json.load(jsondata)
-            
+            # FIX: catch corrupted database when listing passwords
+            try:
+                with open(filename, 'r') as jsondata:
+                    pass_list = json.load(jsondata)
+            except json.JSONDecodeError:
+                logger.error("Password database is corrupted — could not list passwords.")
+                raise PasswordFileDoesNotExist
+            except OSError as e:
+                logger.error("Could not read password file: %s", e)
+                raise PasswordFileDoesNotExist
+
             passwords_lst = ""
             for i in pass_list:
                 passwords_lst += "--{}\n".format(i)
-            
             if passwords_lst == "":
                 raise PasswordFileIsEmpty
             else:
@@ -183,93 +161,92 @@ class DataManip:
             raise PasswordFileDoesNotExist
 
     def delete_db(self, filename, stored_master, entered_master):
-        """Delete DB/Password file & contents
-        
-        Arguments:
-            filename {str} -- DB/File to delete
-            stored_master {str} -- Stored master password in DB
-            entered_master {str} -- user-entered master password to authenticate
-        
-        Raises:
-            MasterPasswordIncorrect: Entered password does not match stored password
-            PasswordFileDoesNotExist: No file/db to delete
-        """
+        """Delete DB/Password file & contents"""
         if os.path.isfile(filename):
             if stored_master == entered_master:
-                # first clear the data
                 spinner = Halo(text=colored("Deleting all password data...", "red"), spinner=self.dots_, color="red")
-                jfile = {}
-                with open(filename, 'w') as jdata:
-                    json.dump(jfile, jdata)
-                # then delete the file
-                os.remove(filename)
+                # FIX: catch OS errors when deleting the database
+                try:
+                    jfile = {}
+                    with open(filename, 'w') as jdata:
+                        json.dump(jfile, jdata)
+                    os.remove(filename)
+                except OSError as e:
+                    logger.error("Failed to delete password database: %s", e)
+                    spinner.stop()
+                    print(colored("Error: Could not delete password database.", "red"))
+                    return
                 spinner.stop()
+                logger.warning("Password database deleted by user.")
             else:
                 raise MasterPasswordIncorrect
         else:
             raise PasswordFileDoesNotExist
 
     def delete_password(self, filename, website):
-        """Deletes a single password from DB
-        
-        Arguments:
-            filename {str} -- Password file/DB
-            website {str} -- Password to delete
-        
-        Raises:
-            PasswordNotFound: No password for given website
-            PasswordFileDoesNotExist: No password file/DB
-        """
-
+        """Deletes a single password from DB"""
         if os.path.isfile(filename):
-            with open(filename, 'r') as jdata:
-                jfile = json.load(jdata)
-            
+            # FIX: catch corrupted database during single password deletion
+            try:
+                with open(filename, 'r') as jdata:
+                    jfile = json.load(jdata)
+            except json.JSONDecodeError:
+                logger.error("Password database is corrupted — could not delete password for %s.", website)
+                raise PasswordFileDoesNotExist
+            except OSError as e:
+                logger.error("Could not read password file for deletion: %s", e)
+                raise PasswordFileDoesNotExist
+
             try:
                 jfile.pop(website)
                 with open("db/passwords.json", 'w') as jdata:
                     json.dump(jfile, jdata, sort_keys=True, indent=4)
+                logger.info("Password deleted for website: %s", website)
             except KeyError:
                 raise PasswordNotFound
+            except OSError as e:
+                logger.error("Failed to write updated password file after deletion: %s", e)
+                print(colored("Error: Could not save changes after deletion.", "red"))
         else:
             raise PasswordFileDoesNotExist
 
     def delete_all_data(self, filename, master_file, stored_master, entered_master):
-        """Deletes ALL data including master password and passwords stored
-        
-        Arguments:
-            filename {str} -- Password db/file
-            master_file {str} -- Where masterpassword is stored
-            stored_master {str} -- The master password that is stored
-            entered_master {str} -- User-entered master password. Used to verify
-
-        Raises:
-            MasterPasswordIncorrect: Passwords do not match
-        """
-
-        if os.path.isfile(master_file) and os.path.isfile(filename): # both files exist
+        """Deletes ALL data including master password and passwords stored"""
+        if os.path.isfile(master_file) and os.path.isfile(filename):
             if stored_master == entered_master:
                 spinner = Halo(text=colored("Deleting all data...", "red"), spinner=self.dots_, color="red")
-                # clear data
-                jfile = {}
-                with open(master_file, 'w') as jdata:
-                    json.dump(jfile, jdata)
-                with open(filename, 'w') as jdata:
-                    json.dump(jfile, jdata)
-                # delete file
-                os.remove(filename)
-                os.remove(master_file)
+                # FIX: catch OS errors when deleting all data
+                try:
+                    jfile = {}
+                    with open(master_file, 'w') as jdata:
+                        json.dump(jfile, jdata)
+                    with open(filename, 'w') as jdata:
+                        json.dump(jfile, jdata)
+                    os.remove(filename)
+                    os.remove(master_file)
+                except OSError as e:
+                    logger.error("Failed to delete all data: %s", e)
+                    spinner.stop()
+                    print(colored("Error: Could not delete all data.", "red"))
+                    return
                 spinner.stop()
+                logger.warning("All data including master password deleted by user.")
             else:
                 raise MasterPasswordIncorrect
-        elif os.path.isfile(master_file) and not os.path.isfile(filename): # only master password exists
+        elif os.path.isfile(master_file) and not os.path.isfile(filename):
             if stored_master == entered_master:
                 spinner = Halo(text=colored("Deleting all data...", "red"), spinner=self.dots_, color="red")
-                # clear data
-                jfile = {}
-                with open(master_file, 'w') as jdata:
-                    json.dump(jfile, jdata)
-                os.remove(master_file)
+                try:
+                    jfile = {}
+                    with open(master_file, 'w') as jdata:
+                        json.dump(jfile, jdata)
+                    os.remove(master_file)
+                except OSError as e:
+                    logger.error("Failed to delete master password file: %s", e)
+                    spinner.stop()
+                    print(colored("Error: Could not delete master password file.", "red"))
+                    return
                 spinner.stop()
+                logger.warning("Master password file deleted by user.")
             else:
                 raise MasterPasswordIncorrect
