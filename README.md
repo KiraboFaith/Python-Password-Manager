@@ -1,49 +1,76 @@
-# Python Password Manager
->Note: This password manager was made as a project and is NOT intended for actual use. Please use more sophisticated and well-tested/trusted password managers to store sensitive data.
+# Python Password Manager — Improved Fork
 
-## Demo
+Forked from [clxmente/Python-Password-Manager](https://github.com/clxmente/Python-Password-Manager)
 
-[![asciicast](https://asciinema.org/a/tEGTsXmEMJALLhuYljnRWf8Oh.svg)](https://asciinema.org/a/tEGTsXmEMJALLhuYljnRWf8Oh)
+A command-line password manager that uses AES encryption to securely store 
+passwords for different websites, protected by a master password.
 
-## AES Encryption
+---
 
-The encryption method used in this program comes from the python library [PyCryptoDome](https://pypi.org/project/pycryptodome/). This program uses AES encryption methods to store sensitive data (in this case passwords) into a json file.
+## Changes Made
 
-## Hash Verification
- To authenticate the user, they are prompted to create a master password (that is also used to decrypt data) which is then stored using a SHA256 Hash Function and is verified at login. Whenever the user is prompted to verify their master password, the password they enter is compared to the hash of the stored master password and access if granted if the two hashes match.
- ```python
- if os.path.isfile("db/masterpassword.json"): # loading json file with stored password.
-       with open("db/masterpassword.json", 'r') as jsondata:
-           jfile = json.load(jsondata)
+This fork improves the original project by adding **logging**, 
+**exception handling**, and **input validation** across three files.
 
-       stored_master_pass = jfile["Master"] # retrieving stored hash and saving to a variable.
-       master_password = getpass.getpass("Enter your Master password: ") # asking user to enter their master password
-       
-       # comparing the two hashes
-       if sha256(master_password.encode('utf-8')).hexdigest() == stored_master_pass:
-         #rest of program executes
+### 1. Logging
+Added Python's built-in `logging` module to record important events to 
+both the terminal and a log file called `app.log`.
+
+Log levels used:
+- `INFO` — successful actions e.g. login, password saved, password deleted
+- `WARNING` — failed login attempts, empty inputs, invalid menu choices
+- `ERROR` — corrupted files, OS errors, decryption failures
+
+### 2. Exception Handling
+The original code had several places where unexpected input or file 
+problems would crash the program with an unhelpful system error. The 
+following were fixed:
+
+- **Corrupted database files** — added `json.JSONDecodeError` handling 
+  when reading `masterpassword.json` and `passwords.json`
+- **Disk/permission errors** — added `OSError` handling around all file 
+  read and write operations
+- **Invalid password length input** — added `ValueError` handling in 
+  `generate_password()` so typing letters instead of a number no longer 
+  crashes the program
+- **Corrupted hex data** — added `ValueError` handling in `decrypt_data()` 
+  for corrupted stored passwords
+- **Colon in website name** — fixed `split(':')` to `split(':', 1)` to 
+  prevent `IndexError` when a website name contains a colon
+
+### 3. Input Validation
+- Empty master password is now rejected with a clear message
+- Empty website name is now rejected with a clear message  
+- Empty password is now rejected with a clear message
+- Invalid menu choices (e.g. `7`, `abc`) now show an error instead of 
+  silently doing nothing
+- Invalid Y/N responses on confirmation prompts now show an error message
+
+---
+
+## Files Changed
+- `main.py`
+- `modules/encryption.py`
+- `modules/menu.py`
+
+---
+
+## How to Run
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the program
+python main.py
 ```
-## Changelog
-Python-Password-Manager has been completely rewritten to be more object-oriented and abstract even more of the methods found in the original version. 
 
-#### Notable Changes:
-* Object-Oriented Design:
-  * Creation of [DataManip Class](./modules/encryption.py):
-    * Handles all backend processes regarding encryption, decryption, and DB functions.
-  * Creation of [Manager Class](./modules/menu.py):
-    * Uses DataManip methods to provide the CLI interface seen in the Demo.
-  * [Custom Exceptions](./modules/exceptions.py):
-    * Better handling of errors.
-* General Improvements:
-  * Now returns user to specific points of the program after errors where as before the entire program would restart.
-  * Echo mode is set to off when Master Password is being entered.
-  * Added two options to menu:
-    * Delete a single password
-    * Specific options to delete ONLY passwords and another option to completely wipe all data including master password.
-  * Option to copy retrieved password to clipboard
-  * General code/implementation improvements
+---
 
-# Vulnerability
-As mentioned at the top, this was made as a project and not intended for actual use. Below I demonstrate what any expert hacker can accomplish by exploiting a vulnerability. Just kidding, anyone can do this. Since the files are stored locally, they can easily be deleted without needing to enter any credentials and consequently all stored passwords are gone along with other data.
-
-<a href="https://youtu.be/Jy-c8QbzJFI" target="_blank"> <img src="./vuln.gif" width="800"> </a>
+## Log File
+All events are saved to `app.log` in the project root. Example:
+```
+2026-03-21 17:00:00 | INFO     | main:45 | Password Manager started.
+2026-03-21 17:00:05 | WARNING  | main:38 | Failed login attempt — incorrect master password entered.
+2026-03-21 17:00:10 | INFO     | main:32 | Master password accepted. User logged in successfully.
+2026-03-21 17:00:20 | INFO     | encryption:47 | Password saved successfully for website: google.com
+```
