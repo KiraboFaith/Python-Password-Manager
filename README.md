@@ -4,6 +4,7 @@
 ## S24B23/083
 Forked from [clxmente/Python-Password-Manager](https://github.com/clxmente/Python-Password-Manager)
 
+## Project Description
 A command-line password manager that uses AES encryption to securely store 
 passwords for different websites, protected by a master password.
 
