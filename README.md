@@ -74,3 +74,33 @@ All events are saved to `app.log` in the project root. Example:
 2026-03-21 17:00:10 | INFO     | main:32 | Master password accepted. User logged in successfully.
 2026-03-21 17:00:20 | INFO     | encryption:47 | Password saved successfully for website: google.com
 ```
+## AI-Generated Logging vs Human Reasoning
+
+As part of improving this project, AI suggestions were compared with human 
+reasoning when deciding what to log and how.
+
+### What AI suggested
+AI tends to log everything systematically — every function entry, every 
+file operation, every exception. It focuses on coverage, making sure no 
+event goes unrecorded. For example, AI suggested logging every single file 
+read and write operation with detailed error messages including the exact 
+OS error code.
+
+### What a human developer would think
+A human developer thinks about logging from a user and maintainer 
+perspective. They ask: *"What would I actually need to know if something 
+went wrong at 2am?"* A human prioritises:
+- Security events first — failed login attempts, deleted databases
+- User actions that cannot be undone — password deletion, full data wipe
+- Errors that are hard to reproduce — corrupted files, disk errors
+
+A human would skip logging routine successful reads because they clutter 
+the log file and make it harder to spot real problems.
+
+### Key difference
+AI prioritises **completeness** — log everything just in case. Humans 
+prioritise **relevance** — log only what helps you diagnose a real problem 
+quickly. The best approach, used in this project, combines both: AI helped 
+identify all the places worth logging, while human judgment decided which 
+level (`INFO`, `WARNING`, `ERROR`) was appropriate for each event and 
+which routine operations did not need logging at all.
