@@ -5,7 +5,7 @@
 Forked from [clxmente/Python-Password-Manager](https://github.com/clxmente/Python-Password-Manager)
 
 ## Project Description
-A command-line password manager that uses AES encryption to securely store 
+This is a command-line password manager that uses AES(Advanced Encryption Standard) encryption to securely store 
 passwords for different websites, protected by a master password.
 
 ---
@@ -23,8 +23,8 @@ security application like a password manager because:
 - If the program crashed, there was no log to help diagnose what went wrong
 - Silent failures like corrupted files or OS errors left no trace behind
 
-#### How It Was Fixed
-Added Python's built-in `logging` module to record important events to 
+#### How I Fixed It
+I added Python's built-in `logging` module to record important events to 
 both the terminal and a log file called `app.log`.
 
 Log levels used:
@@ -41,8 +41,8 @@ Log levels used:
   file paths to the user.
 - **`generate_password()` crashed on letters** — the original code called 
   `int(length)` directly without checking if the input was actually a 
-  number. Typing `abc` instead of `8` threw an unhandled `ValueError` and 
-  crashed the entire program.
+  number. Typing `abc` instead of `8` can throw an unhandled `ValueError` and 
+  crashes the entire program.
 - **Silent failures on invalid menu choices** — typing `7` or `abc` at 
   the menu returned `None` silently. The user received no feedback and 
   nothing happened.
@@ -56,7 +56,7 @@ Log levels used:
   `OSError` handling. A full disk or permission error would crash the 
   program with a system-level error message.
 
-#### How Each Problem Was Fixed
+#### How I Fixed Each Problem
 - **Corrupted database files** — added `json.JSONDecodeError` handling 
   when reading `masterpassword.json` and `passwords.json`
 - **Disk/permission errors** — added `OSError` handling around all file 
@@ -78,15 +78,15 @@ Log levels used:
   always failing silently and re-prompting with no explanation
 - Empty website names caused silent recursive loops with no user feedback
 - Empty passwords were accepted and encrypted, storing a blank password
-- Invalid Y/N responses on confirmation prompts were silently ignored
+- Invalid Yes/No responses on confirmation prompts were silently ignored
 
-#### How Each Problem Was Fixed
+#### How I Fixed Each Problem
 - Empty master password is now rejected with a clear message
 - Empty website name is now rejected with a clear message
 - Empty password is now rejected with a clear message
 - Invalid menu choices (e.g. `7`, `abc`) now show an error instead of 
   silently doing nothing
-- Invalid Y/N responses on confirmation prompts now show an error message
+- Invalid Yes/No responses on confirmation prompts now show an error message
 
 ---
 
@@ -118,11 +118,11 @@ All events are saved to `app.log` in the project root. Example:
 ```
 ## AI-Generated Logging vs Human Reasoning
 
-As part of improving this project, AI suggestions were compared with human 
+As part of improving this project, I compared AI suggestions with human 
 reasoning when deciding what to log and how.
 
 ### What AI suggested
-AI tends to log everything systematically — every function entry, every 
+AI tends to log everything systematically for every function entry, every 
 file operation, every exception. It focuses on coverage, making sure no 
 event goes unrecorded. For example, AI suggested logging every single file 
 read and write operation with detailed error messages including the exact 
@@ -130,8 +130,7 @@ OS error code.
 
 ### What a human developer would think
 A human developer thinks about logging from a user and maintainer 
-perspective. They ask: *"What would I actually need to know if something 
-went wrong at 2am?"* A human prioritises:
+perspective. A human prioritises:
 - Security events first — failed login attempts, deleted databases
 - User actions that cannot be undone — password deletion, full data wipe
 - Errors that are hard to reproduce — corrupted files, disk errors
