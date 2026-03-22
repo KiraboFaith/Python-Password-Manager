@@ -1,5 +1,7 @@
-# Python Password Manager — Improved Fork
-
+# Python Password Manager 
+## Kirabo Faith Kiggundu
+## BSCS 2:2
+## S24B23/083
 Forked from [clxmente/Python-Password-Manager](https://github.com/clxmente/Python-Password-Manager)
 
 A command-line password manager that uses AES encryption to securely store 
@@ -9,10 +11,18 @@ passwords for different websites, protected by a master password.
 
 ## Changes Made
 
-This fork improves the original project by adding **logging**, 
-**exception handling**, and **input validation** across three files.
-
 ### 1. Logging
+
+#### Problem Found in the Original Code
+The original project had **zero logging**. This is a serious gap for a 
+security application like a password manager because:
+- There was no way to know if someone was repeatedly trying wrong master 
+  passwords
+- No record existed of when passwords were added, retrieved, or deleted
+- If the program crashed, there was no log to help diagnose what went wrong
+- Silent failures like corrupted files or OS errors left no trace behind
+
+#### How It Was Fixed
 Added Python's built-in `logging` module to record important events to 
 both the terminal and a log file called `app.log`.
 
@@ -22,10 +32,30 @@ Log levels used:
 - `ERROR` — corrupted files, OS errors, decryption failures
 
 ### 2. Exception Handling
-The original code had several places where unexpected input or file 
-problems would crash the program with an unhelpful system error. The 
-following were fixed:
 
+#### Problems Found in the Original Code
+- **No protection on file reads** — opening `masterpassword.json` and 
+  `passwords.json` had no error handling. If either file was corrupted, 
+  the program crashed with a raw Python traceback that exposed internal 
+  file paths to the user.
+- **`generate_password()` crashed on letters** — the original code called 
+  `int(length)` directly without checking if the input was actually a 
+  number. Typing `abc` instead of `8` threw an unhandled `ValueError` and 
+  crashed the entire program.
+- **Silent failures on invalid menu choices** — typing `7` or `abc` at 
+  the menu returned `None` silently. The user received no feedback and 
+  nothing happened.
+- **`split(':')` was unsafe** — retrieving a password split the result on 
+  `:` using `split(':')[1]`. If a website name contained a colon, this 
+  caused an `IndexError` crash.
+- **Empty inputs accepted silently** — the original code looped 
+  recursively on empty website and password inputs without telling the 
+  user why nothing was happening.
+- **No disk error protection** — all file write operations had no 
+  `OSError` handling. A full disk or permission error would crash the 
+  program with a system-level error message.
+
+#### How Each Problem Was Fixed
 - **Corrupted database files** — added `json.JSONDecodeError` handling 
   when reading `masterpassword.json` and `passwords.json`
 - **Disk/permission errors** — added `OSError` handling around all file 
@@ -37,10 +67,21 @@ following were fixed:
   for corrupted stored passwords
 - **Colon in website name** — fixed `split(':')` to `split(':', 1)` to 
   prevent `IndexError` when a website name contains a colon
+- **Empty inputs** — added explicit validation with clear user-facing 
+  error messages instead of silent recursive loops
 
 ### 3. Input Validation
+
+#### Problems Found in the Original Code
+- Empty master password was accepted and compared against the stored hash, 
+  always failing silently and re-prompting with no explanation
+- Empty website names caused silent recursive loops with no user feedback
+- Empty passwords were accepted and encrypted, storing a blank password
+- Invalid Y/N responses on confirmation prompts were silently ignored
+
+#### How Each Problem Was Fixed
 - Empty master password is now rejected with a clear message
-- Empty website name is now rejected with a clear message  
+- Empty website name is now rejected with a clear message
 - Empty password is now rejected with a clear message
 - Invalid menu choices (e.g. `7`, `abc`) now show an error instead of 
   silently doing nothing
